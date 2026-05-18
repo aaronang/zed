@@ -8,12 +8,11 @@ use git::{
     commit::ParsedCommitMessage,
 };
 use gpui::{
-    AnyElement, App, AppContext as _, Context, Entity, Hsla, ScrollHandle, Subscription, Task,
+    AnyElement, AnyView, App, AppContext as _, Context, Entity, Hsla, Subscription, Task,
     TextStyle, WeakEntity, Window,
 };
 use itertools::Itertools;
 use language::{Bias, BufferSnapshot, Edit};
-use markdown::Markdown;
 use multi_buffer::{MultiBuffer, RowInfo};
 use project::{
     Project, ProjectItem as _,
@@ -107,17 +106,14 @@ pub trait BlameRenderer {
         _: &mut App,
     ) -> Option<AnyElement>;
 
-    fn render_blame_entry_popover(
+    fn create_blame_popover(
         &self,
         _: BlameEntry,
-        _: ScrollHandle,
         _: Option<ParsedCommitMessage>,
-        _: Entity<Markdown>,
         _: Entity<Repository>,
         _: WeakEntity<Workspace>,
-        _: &mut Window,
         _: &mut App,
-    ) -> Option<AnyElement>;
+    ) -> Option<AnyView>;
 
     fn open_blame_commit(
         &self,
@@ -159,17 +155,14 @@ impl BlameRenderer for () {
         None
     }
 
-    fn render_blame_entry_popover(
+    fn create_blame_popover(
         &self,
         _: BlameEntry,
-        _: ScrollHandle,
         _: Option<ParsedCommitMessage>,
-        _: Entity<Markdown>,
         _: Entity<Repository>,
         _: WeakEntity<Workspace>,
-        _: &mut Window,
         _: &mut App,
-    ) -> Option<AnyElement> {
+    ) -> Option<AnyView> {
         None
     }
 

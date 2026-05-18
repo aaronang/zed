@@ -37,7 +37,7 @@ use buffer_diff::{DiffHunkStatus, DiffHunkStatusKind};
 use collections::{BTreeMap, HashMap, HashSet};
 use feature_flags::{DiffReviewFeatureFlag, FeatureFlagAppExt as _};
 use file_icons::FileIcons;
-use git::{Oid, blame::BlameEntry, commit::ParsedCommitMessage, status::FileStatus};
+use git::{Oid, blame::BlameEntry, status::FileStatus};
 use gpui::{
     Action, Along, AnyElement, App, AppContext, AvailableSpace, Axis as ScrollbarAxis, BorderStyle,
     Bounds, ClickEvent, ClipboardItem, ContentMask, Context, Corners, CursorStyle, DispatchPhase,
@@ -45,8 +45,8 @@ use gpui::{
     GlobalElementId, Hitbox, HitboxBehavior, Hsla, InteractiveElement, IntoElement, IsZero, Length,
     Modifiers, ModifiersChangedEvent, MouseButton, MouseClickEvent, MouseDownEvent, MouseMoveEvent,
     MousePressureEvent, MouseUpEvent, PaintQuad, ParentElement, Pixels, PressureStage, ScrollDelta,
-    ScrollHandle, ScrollWheelEvent, ShapedLine, SharedString, Size, StatefulInteractiveElement,
-    Style, Styled, StyledText, TaskExt, TextAlign, TextRun, TextStyleRefinement, WeakEntity,
+    ScrollWheelEvent, ShapedLine, SharedString, Size, StatefulInteractiveElement,
+    Style, Styled, StyledText, TaskExt, TextAlign, TextRun, TextStyleRefinement,
     Window, anchored, deferred, div, fill, linear_color_stop, linear_gradient, outline,
     pattern_slash, point, px, quad, relative, size, solid_background, transparent_black,
 };
@@ -55,7 +55,6 @@ use language::{
     HighlightedText, IndentGuideSettings, LanguageAwareStyling,
     language_settings::ShowWhitespaceSetting,
 };
-use markdown::Markdown;
 use multi_buffer::{
     Anchor, ExcerptBoundaryInfo, ExpandExcerptDirection, ExpandInfo, MultiBufferPoint,
     MultiBufferRow, RowInfo,
@@ -2879,74 +2878,23 @@ impl EditorElement {
 
     fn layout_blame_popover(
         &self,
-        editor_snapshot: &EditorSnapshot,
+        _editor_snapshot: &EditorSnapshot,
         text_hitbox: &Hitbox,
         line_height: Pixels,
         window: &mut Window,
         cx: &mut App,
     ) {
-        if !self.editor.read(cx).inline_blame_popover.is_some() {
-            return;
-        }
-
-        let Some(blame) = self.editor.read(cx).blame.clone() else {
-            return;
-        };
-        let cursor_point = self
-            .editor
-            .read(cx)
-            .selections
-            .newest::<language::Point>(&editor_snapshot.display_snapshot)
-            .head();
-
-        let Some((buffer, buffer_point)) = editor_snapshot
-            .buffer_snapshot()
-            .point_to_buffer_point(cursor_point)
-        else {
-            return;
-        };
-
-        let row_info = RowInfo {
-            buffer_id: Some(buffer.remote_id()),
-            buffer_row: Some(buffer_point.row),
-            ..Default::default()
-        };
-
-        let Some((buffer_id, blame_entry)) = blame
-            .update(cx, |blame, cx| blame.blame_for_rows(&[row_info], cx).next())
-            .flatten()
-        else {
-            return;
-        };
-
-        let Some((popover_state, target_point)) = self.editor.read_with(cx, |editor, _| {
+        let Some((popover_view, target_point)) = self.editor.read_with(cx, |editor, _| {
             editor
                 .inline_blame_popover
                 .as_ref()
-                .map(|state| (state.popover_state.clone(), state.position))
+                .map(|state| (state.popover_state.popover.clone(), state.position))
         }) else {
             return;
         };
 
-        let workspace = self
-            .editor
-            .read_with(cx, |editor, _| editor.workspace().map(|w| w.downgrade()));
-
-        let maybe_element = workspace.and_then(|workspace| {
-            render_blame_entry_popover(
-                blame_entry,
-                popover_state.scroll_handle,
-                popover_state.commit_message,
-                popover_state.markdown,
-                workspace,
-                &blame,
-                buffer_id,
-                window,
-                cx,
-            )
-        });
-
-        if let Some(mut element) = maybe_element {
+        {
+            let mut element = popover_view.into_any_element();
             let size = element.layout_as_root(AvailableSpace::min_size(), window, cx);
             let overall_height = size.height + HOVER_POPOVER_GAP;
             let popover_origin = if target_point.y > overall_height {
@@ -8854,35 +8802,6 @@ fn render_inline_blame_entry(
     renderer.render_inline_blame_entry(&style.text, blame_entry, cx)
 }
 
-fn render_blame_entry_popover(
-    blame_entry: BlameEntry,
-    scroll_handle: ScrollHandle,
-    commit_message: Option<ParsedCommitMessage>,
-    markdown: Entity<Markdown>,
-    workspace: WeakEntity<Workspace>,
-    blame: &Entity<GitBlame>,
-    buffer: BufferId,
-    window: &mut Window,
-    cx: &mut App,
-) -> Option<AnyElement> {
-    if markdown.read(cx).is_parsing() {
-        return None;
-    }
-
-    let renderer = cx.global::<GlobalBlameRenderer>().0.clone();
-    let blame = blame.read(cx);
-    let repository = blame.repository(cx, buffer)?;
-    renderer.render_blame_entry_popover(
-        blame_entry,
-        scroll_handle,
-        commit_message,
-        markdown,
-        repository,
-        workspace,
-        window,
-        cx,
-    )
-}
 
 fn render_blame_entry(
     ix: usize,

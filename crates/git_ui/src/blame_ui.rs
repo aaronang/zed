@@ -2,18 +2,12 @@ use crate::{
     commit_tooltip::{CommitAvatar, CommitTooltip},
     commit_view::CommitView,
 };
-use editor::{BlameRenderer, Editor, hover_markdown_style};
-use git::{blame::BlameEntry, commit::ParsedCommitMessage, repository::CommitSummary};
-use gpui::{
-    ClipboardItem, Entity, Hsla, MouseButton, ScrollHandle, Subscription, TextStyle,
-    TextStyleRefinement, UnderlineStyle, WeakEntity, prelude::*,
-};
-use markdown::{Markdown, MarkdownElement};
+use editor::{BlameRenderer, Editor};
+use git::{blame::BlameEntry, commit::ParsedCommitMessage};
+use gpui::{AnyView, ClipboardItem, Entity, Hsla, MouseButton, Subscription, TextStyle, WeakEntity, prelude::*};
 use project::{git_store::Repository, project_settings::ProjectSettings};
 use settings::Settings as _;
-use theme_settings::ThemeSettings;
-use time::OffsetDateTime;
-use ui::{ContextMenu, CopyButton, Divider, prelude::*, tooltip_container};
+use ui::{ContextMenu, prelude::*};
 use workspace::Workspace;
 
 const GIT_BLAME_MAX_AUTHOR_CHARS_DISPLAYED: usize = 20;
@@ -172,202 +166,17 @@ impl BlameRenderer for GitBlameRenderer {
         )
     }
 
-    fn render_blame_entry_popover(
+    fn create_blame_popover(
         &self,
         blame: BlameEntry,
-        scroll_handle: ScrollHandle,
         details: Option<ParsedCommitMessage>,
-        markdown: Entity<Markdown>,
         repository: Entity<Repository>,
         workspace: WeakEntity<Workspace>,
-        window: &mut Window,
         cx: &mut App,
-    ) -> Option<AnyElement> {
-        let commit_time = blame
-            .committer_time
-            .and_then(|t| OffsetDateTime::from_unix_timestamp(t).ok())
-            .unwrap_or(OffsetDateTime::now_utc());
-
-        let sha = blame.sha.to_string().into();
-        let author: SharedString = blame
-            .author
-            .clone()
-            .unwrap_or("<no name>".to_string())
-            .into();
-        let author_email = blame.author_mail.as_deref().unwrap_or_default();
-        let author_email_for_avatar = blame.author_mail.as_ref().map(|email| {
-            SharedString::from(
-                email
-                    .trim_start_matches('<')
-                    .trim_end_matches('>')
-                    .to_string(),
-            )
-        });
-        let avatar = CommitAvatar::new(
-            &sha,
-            author_email_for_avatar,
-            details.as_ref().and_then(|it| it.remote.as_ref()),
-        )
-        .render(window, cx);
-
-        let short_commit_id = sha
-            .get(..8)
-            .map(|sha| sha.to_string().into())
-            .unwrap_or_else(|| sha.clone());
-        let local_offset = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
-        let absolute_timestamp = time_format::format_localized_timestamp(
-            commit_time,
-            OffsetDateTime::now_utc(),
-            local_offset,
-            time_format::TimestampFormat::MediumAbsolute,
-        );
-        let link_color = cx.theme().colors().text_accent;
-        let markdown_style = {
-            let mut style = hover_markdown_style(window, cx);
-            style.link.refine(&TextStyleRefinement {
-                color: Some(link_color),
-                underline: Some(UnderlineStyle {
-                    color: Some(link_color.opacity(0.4)),
-                    thickness: px(1.0),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            });
-            style
-        };
-
-        let message = details
-            .as_ref()
-            .map(|_| MarkdownElement::new(markdown.clone(), markdown_style).into_any())
-            .unwrap_or("<no commit message>".into_any());
-
-        let pull_request = details
-            .as_ref()
-            .and_then(|details| details.pull_request.clone());
-
-        let ui_font_size = ThemeSettings::get_global(cx).ui_font_size(cx);
-        let message_max_height = window.line_height() * 12 + (ui_font_size / 0.4);
-        let commit_summary = CommitSummary {
-            sha: sha.clone(),
-            subject: details
-                .as_ref()
-                .and_then(|details| {
-                    Some(
-                        details
-                            .message
-                            .split('\n')
-                            .next()?
-                            .trim_end()
-                            .to_string()
-                            .into(),
-                    )
-                })
-                .unwrap_or_default(),
-            commit_timestamp: commit_time.unix_timestamp(),
-            author_name: author.clone(),
-            has_parent: false,
-        };
-
+    ) -> Option<AnyView> {
         Some(
-            tooltip_container(cx, |this, cx| {
-                this.occlude()
-                    .on_mouse_move(|_, _, cx| cx.stop_propagation())
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .child(
-                        v_flex()
-                            .w(gpui::rems(30.))
-                            .child(
-                                h_flex()
-                                    .pb_1()
-                                    .gap_2()
-                                    .overflow_x_hidden()
-                                    .flex_wrap()
-                                    .border_b_1()
-                                    .border_color(cx.theme().colors().border_variant)
-                                    .child(avatar)
-                                    .child(author)
-                                    .when(!author_email.is_empty(), |this| {
-                                        this.child(
-                                            div()
-                                                .text_color(cx.theme().colors().text_muted)
-                                                .child(author_email.to_owned()),
-                                        )
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id("inline-blame-commit-message")
-                                    .track_scroll(&scroll_handle)
-                                    .py_1p5()
-                                    .max_h(message_max_height)
-                                    .overflow_y_scroll()
-                                    .child(message),
-                            )
-                            .child(
-                                h_flex()
-                                    .text_color(cx.theme().colors().text_muted)
-                                    .w_full()
-                                    .justify_between()
-                                    .pt_1()
-                                    .border_t_1()
-                                    .border_color(cx.theme().colors().border_variant)
-                                    .child(absolute_timestamp)
-                                    .child(
-                                        h_flex()
-                                            .gap_1()
-                                            .when_some(pull_request, |this, pr| {
-                                                this.child(
-                                                    Button::new(
-                                                        "pull-request-button",
-                                                        format!("#{}", pr.number),
-                                                    )
-                                                    .color(Color::Muted)
-                                                    .start_icon(
-                                                        Icon::new(IconName::PullRequest)
-                                                            .size(IconSize::Small)
-                                                            .color(Color::Muted),
-                                                    )
-                                                    .on_click(move |_, _, cx| {
-                                                        cx.stop_propagation();
-                                                        cx.open_url(pr.url.as_str())
-                                                    }),
-                                                )
-                                                .child(Divider::vertical())
-                                            })
-                                            .child(
-                                                Button::new(
-                                                    "commit-sha-button",
-                                                    short_commit_id.clone(),
-                                                )
-                                                .color(Color::Muted)
-                                                .start_icon(
-                                                    Icon::new(IconName::FileGit)
-                                                        .size(IconSize::Small)
-                                                        .color(Color::Muted),
-                                                )
-                                                .on_click(move |_, window, cx| {
-                                                    CommitView::open(
-                                                        commit_summary.sha.clone().into(),
-                                                        repository.downgrade(),
-                                                        workspace.clone(),
-                                                        None,
-                                                        None,
-                                                        window,
-                                                        cx,
-                                                    );
-                                                    cx.stop_propagation();
-                                                }),
-                                            )
-                                            .child(Divider::vertical())
-                                            .child(
-                                                CopyButton::new("copy-blame-sha", sha.to_string())
-                                                    .tooltip_label("Copy SHA"),
-                                            ),
-                                    ),
-                            ),
-                    )
-            })
-            .into_any_element(),
+            cx.new(|cx| CommitTooltip::blame_entry(&blame, details, repository, workspace, cx))
+                .into(),
         )
     }
 

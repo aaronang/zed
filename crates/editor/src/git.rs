@@ -1,7 +1,7 @@
 pub(super) mod blame;
 
 use super::*;
-use ::git::{Restore, blame::BlameEntry, commit::ParsedCommitMessage, status::FileStatus};
+use ::git::{Restore, blame::BlameEntry, status::FileStatus};
 use buffer_diff::DiffHunkStatus;
 
 pub type RenderDiffHunkControlsFn = Arc<
@@ -34,9 +34,7 @@ pub(super) enum DisplayDiffHunk {
 
 #[derive(Clone)]
 pub(super) struct InlineBlamePopoverState {
-    pub(super) scroll_handle: ScrollHandle,
-    pub(super) commit_message: Option<ParsedCommitMessage>,
-    pub(super) markdown: Entity<Markdown>,
+    pub(super) popover: gpui::AnyView,
 }
 
 pub(super) struct InlineBlamePopover {
@@ -1625,28 +1623,30 @@ impl Editor {
                         let Some(blame) = editor.blame.as_ref() else {
                             return;
                         };
-                        let blame = blame.read(cx);
-                        let details = blame.details_for_entry(buffer, &blame_entry);
-                        let markdown = cx.new(|cx| {
-                            Markdown::new(
-                                details
-                                    .as_ref()
-                                    .map(|message| message.message.clone())
-                                    .unwrap_or_default(),
-                                None,
-                                None,
-                                cx,
-                            )
-                        });
+                        let renderer =
+                            cx.global::<blame::GlobalBlameRenderer>().0.clone();
+                        let details = blame.read(cx).details_for_entry(buffer, &blame_entry);
+                        let repository = blame.read(cx).repository(cx, buffer);
+                        let workspace = editor.workspace().map(|w| w.downgrade());
+                        let Some((repository, workspace)) =
+                            repository.zip(workspace)
+                        else {
+                            return;
+                        };
+                        let Some(popover) = renderer.create_blame_popover(
+                            blame_entry,
+                            details,
+                            repository,
+                            workspace,
+                            cx,
+                        ) else {
+                            return;
+                        };
                         editor.inline_blame_popover = Some(InlineBlamePopover {
                             position,
                             hide_task: None,
                             popover_bounds: None,
-                            popover_state: InlineBlamePopoverState {
-                                scroll_handle: ScrollHandle::new(),
-                                commit_message: details,
-                                markdown,
-                            },
+                            popover_state: InlineBlamePopoverState { popover },
                             keyboard_grace: ignore_timeout,
                         });
                         cx.notify();

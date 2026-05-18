@@ -1599,12 +1599,12 @@ impl GitGraph {
                             (!ranges.is_empty()).then_some(ranges)
                         })
                         .unwrap_or_default();
-                    HighlightedLabel::from_ranges(subject.clone(), highlight_ranges)
+                    HighlightedLabel::from_ranges(subject, highlight_ranges)
                         .when(!is_selected, |c| c.color(Color::Muted))
                         .truncate()
                         .into_any_element()
                 } else {
-                    column_label(subject.clone())
+                    column_label(subject)
                 };
 
                 vec![
